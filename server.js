@@ -7,7 +7,7 @@ dotenv.config();
 const app = express();
 app.use(cors({
   origin: [
-    'https://finance-frontendd.vercel.app', // Sua URL Vercel
+    'https://finance-frontendd.vercel.app',
     'http://localhost:3000'
   ],
   credentials: true
@@ -84,7 +84,13 @@ app.post("/api/login", async (req, res) => {
     return res.status(401).json({ erro: "Usuário ou senha inválidos" });
   }
 
-  res.json({ usuario });
+  // ✅ Converter _id para id
+  const usuarioFormatado = {
+    ...usuario.toObject(),
+    id: usuario._id
+  };
+
+  res.json({ usuario: usuarioFormatado });
 });
 
 // --------------------------------------
@@ -99,7 +105,14 @@ app.post("/api/cadastro", async (req, res) => {
   }
 
   const novo = await Usuario.create({ nome, email, senha });
-  res.json({ mensagem: "Cadastrado!", usuario: novo });
+  
+  // ✅ Converter _id para id
+  const usuarioFormatado = {
+    ...novo.toObject(),
+    id: novo._id
+  };
+
+  res.json({ mensagem: "Cadastrado!", usuario: usuarioFormatado });
 });
 
 // --------------------------------------
@@ -109,7 +122,13 @@ app.get("/api/transacoes/:usuarioId", async (req, res) => {
   const transacoes = await Transacao.find({ usuario_id: req.params.usuarioId })
     .sort({ data: -1 });
 
-  res.json(transacoes);
+  // ✅ Converter _id para id em todas as transações
+  const transacoesFormatadas = transacoes.map(t => ({
+    ...t.toObject(),
+    id: t._id
+  }));
+
+  res.json(transacoesFormatadas);
 });
 
 // --------------------------------------
@@ -167,7 +186,11 @@ app.post("/api/transacoes/parcelada", async (req, res) => {
         id_grupo_parcelas: idGrupo
       });
 
-      criadas.push(transacao);
+      // ✅ Converter _id para id
+      criadas.push({
+        ...transacao.toObject(),
+        id: transacao._id
+      });
     }
 
     return res.json({ mensagem: "Parcelas criadas!", transacoes: criadas });
@@ -182,7 +205,14 @@ app.post("/api/transacoes/parcelada", async (req, res) => {
 // --------------------------------------
 app.get("/api/caixinhas/:usuarioId", async (req, res) => {
   const lista = await Caixinha.find({ usuario_id: req.params.usuarioId }).sort({ _id: -1 });
-  res.json(lista);
+  
+  // ✅ Converter _id para id em todas as caixinhas
+  const listaFormatada = lista.map(c => ({
+    ...c.toObject(),
+    id: c._id
+  }));
+
+  res.json(listaFormatada);
 });
 
 // --------------------------------------
