@@ -1,243 +1,218 @@
 import express from "express";
 import cors from "cors";
-import mysql from "mysql2/promise";
-import dotenv from 'dotenv';
+import mongoose from "mongoose";
+import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-app.use(cors({
-  origin: '*', // Aceita qualquer origem (vamos configurar depois)
-  credentials: true
-}));
+app.use(cors({ origin: "*", credentials: true }));
 app.use(express.json());
 
-// Conexão com MySQL
-const db = await mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "Sucesso_123",
-  database: "finance_app",
+// --------------------------------------
+// 🔗 CONEXÃO MONGODB
+// --------------------------------------
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB conectado"))
+  .catch(err => console.error("Erro MongoDB:", err));
+
+
+// --------------------------------------
+// 📦 MODELOS (equivalentes às tabelas)
+// --------------------------------------
+
+const UsuarioSchema = new mongoose.Schema({
+  nome: String,
+  email: { type: String, unique: true },
+  senha: String
 });
 
-// Rota de teste
+const Usuario = mongoose.model("Usuario", UsuarioSchema);
+
+const TransacaoSchema = new mongoose.Schema({
+  usuario_id: String,
+  valor: Number,
+  categoria: String,
+  tipo: String,
+  data: String,
+  descricao: String,
+  fixo: Boolean,
+  pago: Boolean,
+  parcelas: Number,
+  parcela_atual: Number,
+  id_grupo_parcelas: String
+});
+
+const Transacao = mongoose.model("Transacao", TransacaoSchema);
+
+const CaixinhaSchema = new mongoose.Schema({
+  usuario_id: String,
+  nome: String,
+  valor_total: Number,
+  parcelas_total: Number,
+  data_inicio: String,
+  valor_pago: { type: Number, default: 0 },
+  parcelas_pagas: { type: Number, default: 0 }
+});
+
+const Caixinha = mongoose.model("Caixinha", CaixinhaSchema);
+
+
+// --------------------------------------
+// 🟢 ROTA DE TESTE
+// --------------------------------------
 app.get("/", (req, res) => {
-  res.send("Backend funcionando");
+  res.send("Backend funcionando com MongoDB 🎉");
 });
 
-// ROTA DE LOGIN (/api/login)
+
+// --------------------------------------
+// 🔐 LOGIN
+// --------------------------------------
 app.post("/api/login", async (req, res) => {
-  try {
-    const { email, senha } = req.body;
+  const { email, senha } = req.body;
 
-    if (!email || !senha) {
-      return res.status(400).json({ erro: "Email e senha obrigatórios" });
-    }
+  const usuario = await Usuario.findOne({ email, senha });
 
-    const [rows] = await db.execute(
-      "SELECT * FROM usuarios WHERE email = ? AND senha = ?",
-      [email, senha]
-    );
-
-    if (rows.length === 0) {
-      return res.status(401).json({ erro: "Usuário ou senha inválidos" });
-    }
-
-    res.json({ usuario: rows[0] });
-  } catch (err) {
-    console.error("Erro no login:", err);
-    res.status(500).json({ erro: "Erro interno no servidor" });
+  if (!usuario) {
+    return res.status(401).json({ erro: "Usuário ou senha inválidos" });
   }
+
+  res.json({ usuario });
 });
 
-// ROTA DE CADASTRO (/api/cadastro)
+// --------------------------------------
+// 🆕 CADASTRO
+// --------------------------------------
 app.post("/api/cadastro", async (req, res) => {
-  try {
-    const { nome, email, senha } = req.body;
+  const { nome, email, senha } = req.body;
 
-    if (!nome || !email || !senha) {
-      return res.status(400).json({ erro: "Nome, email e senha obrigatórios" });
-    }
-
-    // Verifica se já existe
-    const [verificar] = await db.execute(
-      "SELECT * FROM usuarios WHERE email = ?",
-      [email]
-    );
-
-    if (verificar.length > 0) {
-      return res.status(400).json({ erro: "Email já cadastrado" });
-    }
-
-    // Insere
-    await db.execute(
-      "INSERT INTO usuarios (nome, email, senha) VALUES (?, ?, ?)",
-      [nome, email, senha]
-    );
-
-    res.json({ mensagem: "Usuário cadastrado com sucesso!" });
-  } catch (err) {
-    console.error("Erro no cadastro:", err);
-    res.status(500).json({ erro: "Erro interno no servidor" });
+  const existe = await Usuario.findOne({ email });
+  if (existe) {
+    return res.status(400).json({ erro: "Email já cadastrado" });
   }
+
+  const novo = await Usuario.create({ nome, email, senha });
+  res.json({ mensagem: "Cadastrado!", usuario: novo });
 });
-// BUSCAR TRANSAÇÕES DO USUÁRIO
+
+// --------------------------------------
+// 🔍 BUSCAR TRANSAÇÕES
+// --------------------------------------
 app.get("/api/transacoes/:usuarioId", async (req, res) => {
-  try {
-    const [rows] = await db.execute(
-      "SELECT * FROM transacoes WHERE usuario_id = ? ORDER BY data DESC",
-      [req.params.usuarioId]
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error("Erro ao buscar transações:", err);
-    res.status(500).json({ erro: "Erro ao buscar transações" });
-  }
+  const transacoes = await Transacao.find({ usuario_id: req.params.usuarioId })
+    .sort({ data: -1 });
+
+  res.json(transacoes);
 });
 
-// ADICIONAR TRANSAÇÃO
+// --------------------------------------
+// ➕ ADICIONAR TRANSAÇÃO
+// --------------------------------------
 app.post("/api/transacoes", async (req, res) => {
-  try {
-    const { usuario_id, valor, categoria, tipo, data, descricao, fixo, pago } = req.body;
-
-    const [result] = await db.execute(
-      `INSERT INTO transacoes (usuario_id, valor, categoria, tipo, data, descricao, fixo, pago) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [usuario_id, valor, categoria, tipo, data, descricao, fixo ? 1 : 0, pago ? 1 : 0]
-    );
-
-    res.json({ id: result.insertId, mensagem: "Transação adicionada!" });
-  } catch (err) {
-    console.error("Erro ao adicionar transação:", err);
-    res.status(500).json({ erro: "Erro ao adicionar transação" });
-  }
+  const nova = await Transacao.create(req.body);
+  res.json({ mensagem: "Transação adicionada!", id: nova._id });
 });
 
-// ATUALIZAR TRANSAÇÃO
+// --------------------------------------
+// ✏️ EDITAR TRANSAÇÃO
+// --------------------------------------
 app.put("/api/transacoes/:id", async (req, res) => {
-  try {
-    const { valor, categoria, tipo, data, descricao, fixo, pago } = req.body;
-
-    await db.execute(
-      `UPDATE transacoes SET valor=?, categoria=?, tipo=?, data=?, descricao=?, fixo=?, pago=? 
-       WHERE id=?`,
-      [valor, categoria, tipo, data, descricao, fixo ? 1 : 0, pago ? 1 : 0, req.params.id]
-    );
-
-    res.json({ mensagem: "Transação atualizada!" });
-  } catch (err) {
-    console.error("Erro ao atualizar:", err);
-    res.status(500).json({ erro: "Erro ao atualizar" });
-  }
+  await Transacao.findByIdAndUpdate(req.params.id, req.body);
+  res.json({ mensagem: "Atualizada!" });
 });
 
-// DELETAR TRANSAÇÃO
+// --------------------------------------
+// 🗑️ DELETAR
+// --------------------------------------
 app.delete("/api/transacoes/:id", async (req, res) => {
-  try {
-    await db.execute("DELETE FROM transacoes WHERE id = ?", [req.params.id]);
-    res.json({ mensagem: "Transação deletada!" });
-  } catch (err) {
-    console.error("Erro ao deletar:", err);
-    res.status(500).json({ erro: "Erro ao deletar" });
-  }
+  await Transacao.findByIdAndDelete(req.params.id);
+  res.json({ mensagem: "Deletada!" });
 });
-// ADICIONAR TRANSAÇÃO COM PARCELAS
+
+// --------------------------------------
+// 💳 PARCELADA
+// --------------------------------------
 app.post("/api/transacoes/parcelada", async (req, res) => {
-  try {
-    const { usuario_id, valor, categoria, tipo, data, descricao, fixo, pago, parcelas } = req.body;
+  const { usuario_id, valor, categoria, tipo, data, descricao, fixo, pago, parcelas } = req.body;
 
-    if (parcelas > 1) {
-      // Criar ID único para o grupo de parcelas
-      const idGrupo = `PARC_${Date.now()}`;
-      const valorParcela = (valor / parcelas).toFixed(2);
-      const dataInicial = new Date(data);
+  if (parcelas > 1) {
+    const idGrupo = `PARC_${Date.now()}`;
+    const valorParcela = (valor / parcelas).toFixed(2);
+    const dataInicial = new Date(data);
 
-      const transacoes = [];
-      
-      for (let i = 1; i <= parcelas; i++) {
-        // Calcula a data de cada parcela (mês a mês)
-        const dataParcela = new Date(dataInicial);
-        dataParcela.setMonth(dataParcela.getMonth() + (i - 1));
-        
-        const [result] = await db.execute(
-          `INSERT INTO transacoes (usuario_id, valor, categoria, tipo, data, descricao, fixo, pago, parcelas, parcela_atual, id_grupo_parcelas) 
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [usuario_id, valorParcela, categoria, tipo, dataParcela.toISOString().slice(0, 10), 
-           `${descricao} (${i}/${parcelas})`, fixo ? 1 : 0, false, parcelas, i, idGrupo]
-        );
-        
-        transacoes.push({ id: result.insertId, parcela: i });
-      }
+    const criadas = [];
 
-      res.json({ mensagem: `${parcelas} parcelas criadas!`, transacoes });
-    } else {
-      // Se não tem parcelas, cria transação normal
-      const [result] = await db.execute(
-        `INSERT INTO transacoes (usuario_id, valor, categoria, tipo, data, descricao, fixo, pago) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [usuario_id, valor, categoria, tipo, data, descricao, fixo ? 1 : 0, pago ? 1 : 0]
-      );
-      
-      res.json({ id: result.insertId });
+    for (let i = 1; i <= parcelas; i++) {
+      const d = new Date(dataInicial);
+      d.setMonth(d.getMonth() + (i - 1));
+
+      const transacao = await Transacao.create({
+        usuario_id,
+        valor: valorParcela,
+        categoria,
+        tipo,
+        data: d.toISOString().slice(0, 10),
+        descricao: `${descricao} (${i}/${parcelas})`,
+        fixo,
+        pago: false,
+        parcelas,
+        parcela_atual: i,
+        id_grupo_parcelas: idGrupo
+      });
+
+      criadas.push(transacao);
     }
-  } catch (err) {
-    console.error("Erro ao criar parcelas:", err);
-    res.status(500).json({ erro: "Erro ao criar parcelas" });
+
+    return res.json({ mensagem: "Parcelas criadas!", transacoes: criadas });
   }
+
+  const unica = await Transacao.create(req.body);
+  res.json({ id: unica._id });
 });
-// CAIXINHAS - CRUD completo
+
+// --------------------------------------
+// 🟦 CAIXINHAS - BUSCAR
+// --------------------------------------
 app.get("/api/caixinhas/:usuarioId", async (req, res) => {
-  try {
-    const [rows] = await db.execute(
-      "SELECT * FROM caixinhas WHERE usuario_id = ? ORDER BY id DESC",
-      [req.params.usuarioId]
-    );
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ erro: err.message });
-  }
+  const lista = await Caixinha.find({ usuario_id: req.params.usuarioId }).sort({ _id: -1 });
+  res.json(lista);
 });
 
+// --------------------------------------
+// 🟦 CAIXINHA - CRIAR
+// --------------------------------------
 app.post("/api/caixinhas", async (req, res) => {
-  try {
-    const { usuario_id, nome, valor_total, parcelas_total, data_inicio } = req.body;
-    
-    const [result] = await db.execute(
-      "INSERT INTO caixinhas (usuario_id, nome, valor_total, parcelas_total, data_inicio) VALUES (?, ?, ?, ?, ?)",
-      [usuario_id, nome, valor_total, parcelas_total, data_inicio]
-    );
-    
-    res.json({ id: result.insertId, mensagem: "Caixinha criada!" });
-  } catch (err) {
-    res.status(500).json({ erro: err.message });
-  }
+  const nova = await Caixinha.create(req.body);
+  res.json({ id: nova._id, mensagem: "Caixinha criada!" });
 });
 
+// --------------------------------------
+// 🟦 PAGAR PARCELA
+// --------------------------------------
 app.put("/api/caixinhas/:id/pagar", async (req, res) => {
-  try {
-    const { valor } = req.body;
-    
-    await db.execute(
-      "UPDATE caixinhas SET valor_pago = valor_pago + ?, parcelas_pagas = parcelas_pagas + 1 WHERE id = ?",
-      [valor, req.params.id]
-    );
-    
-    res.json({ mensagem: "Parcela paga!" });
-  } catch (err) {
-    res.status(500).json({ erro: err.message });
-  }
+  const { valor } = req.body;
+
+  const cx = await Caixinha.findById(req.params.id);
+  cx.valor_pago += valor;
+  cx.parcelas_pagas += 1;
+  await cx.save();
+
+  res.json({ mensagem: "Parcela paga!" });
 });
 
+// --------------------------------------
+// 🟦 DELETAR
+// --------------------------------------
 app.delete("/api/caixinhas/:id", async (req, res) => {
-  try {
-    await db.execute("DELETE FROM caixinhas WHERE id = ?", [req.params.id]);
-    res.json({ mensagem: "Caixinha deletada!" });
-  } catch (err) {
-    res.status(500).json({ erro: err.message });
-  }
+  await Caixinha.findByIdAndDelete(req.params.id);
+  res.json({ mensagem: "Caixinha deletada!" });
 });
 
-// Iniciar servidor
-const PORT = process.env.PORT || 3307;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Backend rodando na porta ${PORT}`);
+
+// --------------------------------------
+// 🚀 INICIAR SERVIDOR
+// --------------------------------------
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, "0.0.0.0", () => {
+  console.log("Servidor rodando na porta " + PORT);
 });
