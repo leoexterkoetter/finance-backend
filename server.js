@@ -7,7 +7,7 @@ dotenv.config();
 const app = express();
 app.use(cors({
   origin: [
-    'https://finance-frontendd.vercel.app/', // Sua URL Vercel
+    'https://finance-frontendd.vercel.app', // Sua URL Vercel
     'http://localhost:3000'
   ],
   credentials: true
