@@ -1,255 +1,344 @@
-import express from "express";
-import cors from "cors";
-import mongoose from "mongoose";
-import dotenv from "dotenv";
-dotenv.config();
+const express = require('express');
+const cors = require('cors');
+const { MongoClient, ObjectId } = require('mongodb');
 
 const app = express();
-app.use(cors({
-  origin: [
-    'https://finance-frontendd.vercel.app',
-    'http://localhost:3000'
-  ],
-  credentials: true
-}));
+const PORT = process.env.PORT || 3001;
+
+// Middleware
+app.use(cors());
 app.use(express.json());
 
+// MongoDB Connection
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+const DB_NAME = 'finance_app';
 
-// --------------------------------------
-// 🔗 CONEXÃO MONGODB
-// --------------------------------------
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB conectado"))
-  .catch(err => console.error("Erro MongoDB:", err));
+let db;
 
+MongoClient.connect(MONGODB_URI)
+  .then(client => {
+    console.log('✅ Conectado ao MongoDB');
+    db = client.db(DB_NAME);
+  })
+  .catch(err => console.error('❌ Erro ao conectar MongoDB:', err));
 
-// --------------------------------------
-// 📦 MODELOS (equivalentes às tabelas)
-// --------------------------------------
+// ========================================
+// ROTAS DE TRANSAÇÕES
+// ========================================
 
-const UsuarioSchema = new mongoose.Schema({
-  nome: String,
-  email: { type: String, unique: true },
-  senha: String
-});
-
-const Usuario = mongoose.model("Usuario", UsuarioSchema);
-
-const TransacaoSchema = new mongoose.Schema({
-  usuario_id: String,
-  valor: Number,
-  categoria: String,
-  tipo: String,
-  data: String,
-  descricao: String,
-  fixo: Boolean,
-  pago: Boolean,
-  parcelas: Number,
-  parcela_atual: Number,
-  id_grupo_parcelas: String
-});
-
-const Transacao = mongoose.model("Transacao", TransacaoSchema);
-
-const CaixinhaSchema = new mongoose.Schema({
-  usuario_id: String,
-  nome: String,
-  valor_total: Number,
-  parcelas_total: Number,
-  data_inicio: String,
-  valor_pago: { type: Number, default: 0 },
-  parcelas_pagas: { type: Number, default: 0 }
-});
-
-const Caixinha = mongoose.model("Caixinha", CaixinhaSchema);
-
-
-// --------------------------------------
-// 🟢 ROTA DE TESTE
-// --------------------------------------
-app.get("/", (req, res) => {
-  res.send("Backend funcionando com MongoDB 🎉");
-});
-
-
-// --------------------------------------
-// 🔐 LOGIN
-// --------------------------------------
-app.post("/api/login", async (req, res) => {
-  const { email, senha } = req.body;
-
-  const usuario = await Usuario.findOne({ email, senha });
-
-  if (!usuario) {
-    return res.status(401).json({ erro: "Usuário ou senha inválidos" });
+// GET - Buscar todas as transações de um usuário
+app.get('/api/transacoes/:usuario_id', async (req, res) => {
+  try {
+    const transacoes = await db.collection('transacoes')
+      .find({ usuario_id: req.params.usuario_id })
+      .sort({ data: -1 })
+      .toArray();
+    
+    // Converter _id para id
+    const transacoesFormatadas = transacoes.map(t => ({
+      ...t,
+      id: t._id.toString()
+    }));
+    
+    res.json(transacoesFormatadas);
+  } catch (err) {
+    console.error('Erro ao buscar transações:', err);
+    res.status(500).json({ error: 'Erro ao buscar transações' });
   }
-
-  // ✅ Converter _id para id
-  const usuarioFormatado = {
-    ...usuario.toObject(),
-    id: usuario._id
-  };
-
-  res.json({ usuario: usuarioFormatado });
 });
 
-// --------------------------------------
-// 🆕 CADASTRO
-// --------------------------------------
-app.post("/api/cadastro", async (req, res) => {
-  const { nome, email, senha } = req.body;
-
-  const existe = await Usuario.findOne({ email });
-  if (existe) {
-    return res.status(400).json({ erro: "Email já cadastrado" });
+// POST - Criar transação única
+app.post('/api/transacoes', async (req, res) => {
+  try {
+    const novaTransacao = {
+      ...req.body,
+      criado_em: new Date()
+    };
+    
+    const result = await db.collection('transacoes').insertOne(novaTransacao);
+    
+    res.json({ 
+      id: result.insertedId.toString(),
+      message: 'Transação criada com sucesso' 
+    });
+  } catch (err) {
+    console.error('Erro ao criar transação:', err);
+    res.status(500).json({ error: 'Erro ao criar transação' });
   }
-
-  const novo = await Usuario.create({ nome, email, senha });
-  
-  // ✅ Converter _id para id
-  const usuarioFormatado = {
-    ...novo.toObject(),
-    id: novo._id
-  };
-
-  res.json({ mensagem: "Cadastrado!", usuario: usuarioFormatado });
 });
 
-// --------------------------------------
-// 🔍 BUSCAR TRANSAÇÕES
-// --------------------------------------
-app.get("/api/transacoes/:usuarioId", async (req, res) => {
-  const transacoes = await Transacao.find({ usuario_id: req.params.usuarioId })
-    .sort({ data: -1 });
-
-  // ✅ Converter _id para id em todas as transações
-  const transacoesFormatadas = transacoes.map(t => ({
-    ...t.toObject(),
-    id: t._id
-  }));
-
-  res.json(transacoesFormatadas);
-});
-
-// --------------------------------------
-// ➕ ADICIONAR TRANSAÇÃO
-// --------------------------------------
-app.post("/api/transacoes", async (req, res) => {
-  const nova = await Transacao.create(req.body);
-  res.json({ mensagem: "Transação adicionada!", id: nova._id });
-});
-
-// --------------------------------------
-// ✏️ EDITAR TRANSAÇÃO
-// --------------------------------------
-app.put("/api/transacoes/:id", async (req, res) => {
-  await Transacao.findByIdAndUpdate(req.params.id, req.body);
-  res.json({ mensagem: "Atualizada!" });
-});
-
-// --------------------------------------
-// 🗑️ DELETAR
-// --------------------------------------
-app.delete("/api/transacoes/:id", async (req, res) => {
-  await Transacao.findByIdAndDelete(req.params.id);
-  res.json({ mensagem: "Deletada!" });
-});
-
-// --------------------------------------
-// 💳 PARCELADA
-// --------------------------------------
-app.post("/api/transacoes/parcelada", async (req, res) => {
-  const { usuario_id, valor, categoria, tipo, data, descricao, fixo, pago, parcelas } = req.body;
-
-  if (parcelas > 1) {
-    const idGrupo = `PARC_${Date.now()}`;
-    const valorParcela = (valor / parcelas).toFixed(2);
-    const dataInicial = new Date(data);
-
-    const criadas = [];
-
-    for (let i = 1; i <= parcelas; i++) {
-      const d = new Date(dataInicial);
-      d.setMonth(d.getMonth() + (i - 1));
-
-      const transacao = await Transacao.create({
+// POST - Criar transação parcelada
+app.post('/api/transacoes/parcelada', async (req, res) => {
+  try {
+    const { usuario_id, valor, categoria, tipo, data, descricao, fixo, pago, parcelas } = req.body;
+    
+    const dataInicio = new Date(data);
+    const transacoes = [];
+    
+    for (let i = 0; i < parcelas; i++) {
+      const dataTransacao = new Date(dataInicio);
+      dataTransacao.setMonth(dataTransacao.getMonth() + i);
+      
+      transacoes.push({
         usuario_id,
-        valor: valorParcela,
+        valor: parseFloat(valor),
         categoria,
         tipo,
-        data: d.toISOString().slice(0, 10),
-        descricao: `${descricao} (${i}/${parcelas})`,
-        fixo,
+        data: dataTransacao.toISOString().slice(0, 10),
+        descricao: descricao ? `${descricao} (${i + 1}/${parcelas})` : `Parcela ${i + 1}/${parcelas}`,
+        fixo: Boolean(fixo),
         pago: false,
-        parcelas,
-        parcela_atual: i,
-        id_grupo_parcelas: idGrupo
-      });
-
-      // ✅ Converter _id para id
-      criadas.push({
-        ...transacao.toObject(),
-        id: transacao._id
+        parcelas: parseInt(parcelas),
+        parcela_atual: i + 1,
+        criado_em: new Date()
       });
     }
-
-    return res.json({ mensagem: "Parcelas criadas!", transacoes: criadas });
+    
+    const result = await db.collection('transacoes').insertMany(transacoes);
+    
+    res.json({ 
+      id: Object.values(result.insertedIds).map(id => id.toString()),
+      message: `${parcelas} parcelas criadas com sucesso`,
+      quantidade: parcelas
+    });
+  } catch (err) {
+    console.error('Erro ao criar transação parcelada:', err);
+    res.status(500).json({ error: 'Erro ao criar transação parcelada' });
   }
-
-  const unica = await Transacao.create(req.body);
-  res.json({ id: unica._id });
 });
 
-// --------------------------------------
-// 🟦 CAIXINHAS - BUSCAR
-// --------------------------------------
-app.get("/api/caixinhas/:usuarioId", async (req, res) => {
-  const lista = await Caixinha.find({ usuario_id: req.params.usuarioId }).sort({ _id: -1 });
-  
-  // ✅ Converter _id para id em todas as caixinhas
-  const listaFormatada = lista.map(c => ({
-    ...c.toObject(),
-    id: c._id
-  }));
-
-  res.json(listaFormatada);
+// PUT - Atualizar transação
+app.put('/api/transacoes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const atualizacao = { ...req.body };
+    delete atualizacao._id;
+    delete atualizacao.id;
+    
+    await db.collection('transacoes').updateOne(
+      { _id: new ObjectId(id) },
+      { $set: atualizacao }
+    );
+    
+    res.json({ message: 'Transação atualizada com sucesso' });
+  } catch (err) {
+    console.error('Erro ao atualizar transação:', err);
+    res.status(500).json({ error: 'Erro ao atualizar transação' });
+  }
 });
 
-// --------------------------------------
-// 🟦 CAIXINHA - CRIAR
-// --------------------------------------
-app.post("/api/caixinhas", async (req, res) => {
-  const nova = await Caixinha.create(req.body);
-  res.json({ id: nova._id, mensagem: "Caixinha criada!" });
+// DELETE - Deletar transação
+app.delete('/api/transacoes/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    await db.collection('transacoes').deleteOne({ _id: new ObjectId(id) });
+    
+    res.json({ message: 'Transação deletada com sucesso' });
+  } catch (err) {
+    console.error('Erro ao deletar transação:', err);
+    res.status(500).json({ error: 'Erro ao deletar transação' });
+  }
 });
 
-// --------------------------------------
-// 🟦 PAGAR PARCELA
-// --------------------------------------
-app.put("/api/caixinhas/:id/pagar", async (req, res) => {
-  const { valor } = req.body;
+// ========================================
+// ROTAS DE CAIXINHAS
+// ========================================
 
-  const cx = await Caixinha.findById(req.params.id);
-  cx.valor_pago += valor;
-  cx.parcelas_pagas += 1;
-  await cx.save();
-
-  res.json({ mensagem: "Parcela paga!" });
+// GET - Buscar todas as caixinhas de um usuário
+app.get('/api/caixinhas/:usuario_id', async (req, res) => {
+  try {
+    const caixinhas = await db.collection('caixinhas')
+      .find({ usuario_id: req.params.usuario_id })
+      .sort({ criado_em: -1 })
+      .toArray();
+    
+    // Converter _id para id
+    const caixinhasFormatadas = caixinhas.map(c => ({
+      ...c,
+      id: c._id.toString()
+    }));
+    
+    res.json(caixinhasFormatadas);
+  } catch (err) {
+    console.error('Erro ao buscar caixinhas:', err);
+    res.status(500).json({ error: 'Erro ao buscar caixinhas' });
+  }
 });
 
-// --------------------------------------
-// 🟦 DELETAR
-// --------------------------------------
-app.delete("/api/caixinhas/:id", async (req, res) => {
-  await Caixinha.findByIdAndDelete(req.params.id);
-  res.json({ mensagem: "Caixinha deletada!" });
+// POST - Criar caixinha
+app.post('/api/caixinhas', async (req, res) => {
+  try {
+    const novaCaixinha = {
+      ...req.body,
+      valor_pago: 0,
+      parcelas_pagas: 0,
+      criado_em: new Date()
+    };
+    
+    const result = await db.collection('caixinhas').insertOne(novaCaixinha);
+    
+    res.json({ 
+      id: result.insertedId.toString(),
+      message: 'Caixinha criada com sucesso' 
+    });
+  } catch (err) {
+    console.error('Erro ao criar caixinha:', err);
+    res.status(500).json({ error: 'Erro ao criar caixinha' });
+  }
 });
 
-
-// --------------------------------------
-// 🚀 INICIAR SERVIDOR
-// --------------------------------------
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log("Servidor rodando na porta " + PORT);
+// ✅ NOVO: PUT - Atualizar caixinha
+app.put('/api/caixinhas/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const atualizacao = { ...req.body };
+    delete atualizacao._id;
+    delete atualizacao.id;
+    
+    await db.collection('caixinhas').updateOne(
+      { _id: new ObjectId(id) },
+      { $set: atualizacao }
+    );
+    
+    res.json({ message: 'Caixinha atualizada com sucesso' });
+  } catch (err) {
+    console.error('Erro ao atualizar caixinha:', err);
+    res.status(500).json({ error: 'Erro ao atualizar caixinha' });
+  }
 });
+
+// PUT - Pagar parcela da caixinha
+app.put('/api/caixinhas/:id/pagar', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { valor } = req.body;
+    
+    const caixinha = await db.collection('caixinhas').findOne({ _id: new ObjectId(id) });
+    
+    if (!caixinha) {
+      return res.status(404).json({ error: 'Caixinha não encontrada' });
+    }
+    
+    const novoValorPago = caixinha.valor_pago + parseFloat(valor);
+    const novasParcelasPagas = caixinha.parcelas_pagas + 1;
+    
+    await db.collection('caixinhas').updateOne(
+      { _id: new ObjectId(id) },
+      { 
+        $set: { 
+          valor_pago: novoValorPago,
+          parcelas_pagas: novasParcelasPagas
+        } 
+      }
+    );
+    
+    res.json({ 
+      message: 'Parcela paga com sucesso',
+      valor_pago: novoValorPago,
+      parcelas_pagas: novasParcelasPagas
+    });
+  } catch (err) {
+    console.error('Erro ao pagar parcela:', err);
+    res.status(500).json({ error: 'Erro ao pagar parcela' });
+  }
+});
+
+// DELETE - Deletar caixinha
+app.delete('/api/caixinhas/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    await db.collection('caixinhas').deleteOne({ _id: new ObjectId(id) });
+    
+    res.json({ message: 'Caixinha deletada com sucesso' });
+  } catch (err) {
+    console.error('Erro ao deletar caixinha:', err);
+    res.status(500).json({ error: 'Erro ao deletar caixinha' });
+  }
+});
+
+// ========================================
+// ROTAS DE AUTENTICAÇÃO (Simplificada)
+// ========================================
+
+// POST - Login
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, senha } = req.body;
+    
+    const usuario = await db.collection('usuarios').findOne({ email });
+    
+    if (!usuario) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+    
+    if (usuario.senha !== senha) {
+      return res.status(401).json({ error: 'Senha incorreta' });
+    }
+    
+    res.json({
+      id: usuario._id.toString(),
+      nome: usuario.nome,
+      email: usuario.email
+    });
+  } catch (err) {
+    console.error('Erro ao fazer login:', err);
+    res.status(500).json({ error: 'Erro ao fazer login' });
+  }
+});
+
+// POST - Cadastro
+app.post('/api/cadastro', async (req, res) => {
+  try {
+    const { nome, email, senha } = req.body;
+    
+    const usuarioExistente = await db.collection('usuarios').findOne({ email });
+    
+    if (usuarioExistente) {
+      return res.status(400).json({ error: 'Email já cadastrado' });
+    }
+    
+    const novoUsuario = {
+      nome,
+      email,
+      senha,
+      criado_em: new Date()
+    };
+    
+    const result = await db.collection('usuarios').insertOne(novoUsuario);
+    
+    res.json({
+      id: result.insertedId.toString(),
+      nome,
+      email,
+      message: 'Usuário cadastrado com sucesso'
+    });
+  } catch (err) {
+    console.error('Erro ao cadastrar usuário:', err);
+    res.status(500).json({ error: 'Erro ao cadastrar usuário' });
+  }
+});
+
+// ========================================
+// SERVIDOR
+// ========================================
+
+app.get('/', (req, res) => {
+  res.json({ 
+    message: '🚀 API Finance App rodando!',
+    versao: '2.0',
+    endpoints: {
+      transacoes: '/api/transacoes/:usuario_id',
+      caixinhas: '/api/caixinhas/:usuario_id',
+      login: '/api/login',
+      cadastro: '/api/cadastro'
+    }
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+});
+
+module.exports = app;
