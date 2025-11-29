@@ -362,22 +362,28 @@ app.post('/api/transacoes/parcelada', requireAuth, async (req, res) => {
     const { usuario_id, valor, categoria, tipo, data, descricao, fixo, parcelas } = req.body;
 
     const dataInicio = new Date(data);
+    const valorTotal = parseFloat(valor);
+    const numeroParcelas = parseInt(parcelas);
+    
+    // ✅ DIVIDIR O VALOR PELO NÚMERO DE PARCELAS
+    const valorPorParcela = valorTotal / numeroParcelas;
+    
     const transacoes = [];
 
-    for (let i = 0; i < parcelas; i++) {
+    for (let i = 0; i < numeroParcelas; i++) {
       const dataTransacao = new Date(dataInicio);
       dataTransacao.setMonth(dataTransacao.getMonth() + i);
 
       transacoes.push({
         usuario_id,
-        valor: parseFloat(valor),
+        valor: parseFloat(valorPorParcela.toFixed(2)), // ✅ Valor dividido
         categoria,
         tipo,
         data: dataTransacao.toISOString().slice(0, 10),
-        descricao: descricao ? `${descricao} (${i + 1}/${parcelas})` : `Parcela ${i + 1}/${parcelas}`,
+        descricao: descricao ? `${descricao} (${i + 1}/${numeroParcelas})` : `Parcela ${i + 1}/${numeroParcelas}`,
         fixo: Boolean(fixo),
         pago: false,
-        parcelas: parseInt(parcelas),
+        parcelas: numeroParcelas,
         parcela_atual: i + 1
       });
     }
@@ -386,8 +392,10 @@ app.post('/api/transacoes/parcelada', requireAuth, async (req, res) => {
 
     res.json({
       ids: result.map(t => t._id.toString()),
-      message: `${parcelas} parcelas criadas com sucesso`,
-      quantidade: parcelas
+      message: `${numeroParcelas} parcelas de R$ ${valorPorParcela.toFixed(2)} criadas com sucesso`,
+      quantidade: numeroParcelas,
+      valorPorParcela: valorPorParcela.toFixed(2),
+      valorTotal: valorTotal.toFixed(2)
     });
   } catch (err) {
     console.error('Erro ao criar transação parcelada:', err);
