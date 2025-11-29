@@ -16,7 +16,7 @@ app.use(express.json());
 const MONGODB_URI =
   process.env.MONGODB_URI ||
   'mongodb://mongo:nHvWVyeStJDGBRGkJRpyFIhuKKhwBHoQ@shinkansen.proxy.rlwy.net:48390';
-const DB_NAME = process.env.DB_NAME || 'finance_app';
+const DB_NAME = process.env.DB_NAME || 'test';
 const JWT_SECRET =
   process.env.JWT_SECRET || 'dev_secret_finance_app_123';
 
