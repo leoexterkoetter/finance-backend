@@ -20,16 +20,6 @@ const DB_NAME = process.env.DB_NAME || 'finance_app';
 const JWT_SECRET =
   process.env.JWT_SECRET || 'dev_secret_finance_app_123';
 
-  let senhaValida = false;
-
-if (usuario.senha.startsWith('$2')) {
-  senhaValida = await bcrypt.compare(senha, usuario.senha);
-} else {
-  // fallback temporário
-  senhaValida = usuario.senha === senha;
-}
-
-
 if (!MONGODB_URI) {
   console.error('❌ MONGODB_URI não definida. Defina a variável de ambiente.');
   process.exit(1);
@@ -167,10 +157,9 @@ app.post('/api/login', async (req, res) => {
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
 
-    const senhaValida = await bcrypt.compare(senha, usuario.senha);
-    if (!senhaValida) {
-      return res.status(401).json({ error: 'Senha incorreta' });
-    }
+    const senhaValida = usuario.senha.startsWith('$2')
+  ? await bcrypt.compare(senha, usuario.senha)
+  : usuario.senha === senha;
 
     const token = generateToken({ id: usuario._id.toString(), email: usuario.email });
 
