@@ -10,7 +10,7 @@ app.use(cors());
 app.use(express.json());
 
 // MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://mongo:nHvWVyeStJDGBRGkJRpyFIhuKKhwBHoQ@shinkansen.proxy.rlwy.net:48390';
 const DB_NAME = 'finance_app';
 
 let db;
