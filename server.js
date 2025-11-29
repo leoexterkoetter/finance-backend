@@ -34,7 +34,6 @@ app.get('/api/transacoes/:usuario_id', async (req, res) => {
       .sort({ data: -1 })
       .toArray();
     
-    // Converter _id para id
     const transacoesFormatadas = transacoes.map(t => ({
       ...t,
       id: t._id.toString()
@@ -153,7 +152,6 @@ app.get('/api/caixinhas/:usuario_id', async (req, res) => {
       .sort({ criado_em: -1 })
       .toArray();
     
-    // Converter _id para id
     const caixinhasFormatadas = caixinhas.map(c => ({
       ...c,
       id: c._id.toString()
@@ -188,7 +186,7 @@ app.post('/api/caixinhas', async (req, res) => {
   }
 });
 
-// ✅ NOVO: PUT - Atualizar caixinha
+// PUT - Atualizar caixinha
 app.put('/api/caixinhas/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -259,7 +257,276 @@ app.delete('/api/caixinhas/:id', async (req, res) => {
 });
 
 // ========================================
-// ROTAS DE AUTENTICAÇÃO (Simplificada)
+// ✅ NOVO: ROTAS DE CATEGORIAS CUSTOMIZADAS
+// ========================================
+
+// GET - Listar categorias customizadas
+app.get('/api/categorias/:usuario_id', async (req, res) => {
+  try {
+    const categorias = await db.collection('categorias_customizadas')
+      .find({ usuario_id: req.params.usuario_id })
+      .sort({ criado_em: -1 })
+      .toArray();
+    
+    const categoriasFormatadas = categorias.map(c => ({
+      ...c,
+      id: c._id.toString()
+    }));
+    
+    res.json(categoriasFormatadas);
+  } catch (err) {
+    console.error('Erro ao buscar categorias:', err);
+    res.status(500).json({ error: 'Erro ao buscar categorias' });
+  }
+});
+
+// POST - Criar categoria customizada
+app.post('/api/categorias', async (req, res) => {
+  try {
+    const { usuario_id, nome, icone, cor, tipo } = req.body;
+    
+    if (!usuario_id || !nome || !tipo) {
+      return res.status(400).json({ error: 'Campos obrigatórios: usuario_id, nome, tipo' });
+    }
+    
+    const existente = await db.collection('categorias_customizadas').findOne({
+      usuario_id,
+      nome
+    });
+    
+    if (existente) {
+      return res.status(400).json({ error: 'Já existe uma categoria com este nome' });
+    }
+    
+    const novaCategoria = {
+      usuario_id,
+      nome,
+      icone: icone || 'Tag',
+      cor: cor || '#6B7280',
+      tipo,
+      criado_em: new Date()
+    };
+    
+    const result = await db.collection('categorias_customizadas').insertOne(novaCategoria);
+    
+    res.json({ 
+      id: result.insertedId.toString(),
+      ...novaCategoria,
+      message: 'Categoria criada com sucesso' 
+    });
+  } catch (err) {
+    console.error('Erro ao criar categoria:', err);
+    res.status(500).json({ error: 'Erro ao criar categoria' });
+  }
+});
+
+// PUT - Editar categoria
+app.put('/api/categorias/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nome, icone, cor, tipo } = req.body;
+    
+    const atualizacao = {};
+    if (nome !== undefined) atualizacao.nome = nome;
+    if (icone !== undefined) atualizacao.icone = icone;
+    if (cor !== undefined) atualizacao.cor = cor;
+    if (tipo !== undefined) atualizacao.tipo = tipo;
+    
+    await db.collection('categorias_customizadas').updateOne(
+      { _id: new ObjectId(id) },
+      { $set: atualizacao }
+    );
+    
+    res.json({ message: 'Categoria atualizada com sucesso' });
+  } catch (err) {
+    console.error('Erro ao editar categoria:', err);
+    res.status(500).json({ error: 'Erro ao editar categoria' });
+  }
+});
+
+// DELETE - Deletar categoria
+app.delete('/api/categorias/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const count = await db.collection('transacoes').countDocuments({
+      categoria_custom_id: id
+    });
+    
+    if (count > 0) {
+      return res.status(400).json({ 
+        error: `Não é possível deletar. Existem ${count} transações usando esta categoria.` 
+      });
+    }
+    
+    await db.collection('categorias_customizadas').deleteOne({
+      _id: new ObjectId(id)
+    });
+    
+    res.json({ message: 'Categoria deletada com sucesso' });
+  } catch (err) {
+    console.error('Erro ao deletar categoria:', err);
+    res.status(500).json({ error: 'Erro ao deletar categoria' });
+  }
+});
+
+// ========================================
+// ✅ NOVO: ROTAS DE CONTAS/CARTÕES
+// ========================================
+
+// GET - Listar contas
+app.get('/api/contas/:usuario_id', async (req, res) => {
+  try {
+    const contas = await db.collection('contas')
+      .find({ usuario_id: req.params.usuario_id })
+      .sort({ criado_em: -1 })
+      .toArray();
+    
+    const contasFormatadas = contas.map(c => ({
+      ...c,
+      id: c._id.toString()
+    }));
+    
+    res.json(contasFormatadas);
+  } catch (err) {
+    console.error('Erro ao buscar contas:', err);
+    res.status(500).json({ error: 'Erro ao buscar contas' });
+  }
+});
+
+// POST - Criar conta
+app.post('/api/contas', async (req, res) => {
+  try {
+    const { usuario_id, nome, tipo, limite, saldo_atual, cor, icone } = req.body;
+    
+    if (!usuario_id || !nome || !tipo) {
+      return res.status(400).json({ error: 'Campos obrigatórios: usuario_id, nome, tipo' });
+    }
+    
+    const novaConta = {
+      usuario_id,
+      nome,
+      tipo,
+      limite: parseFloat(limite) || 0,
+      saldo_atual: parseFloat(saldo_atual) || 0,
+      cor: cor || '#3B82F6',
+      icone: icone || 'CreditCard',
+      ativa: true,
+      criado_em: new Date()
+    };
+    
+    const result = await db.collection('contas').insertOne(novaConta);
+    
+    res.json({ 
+      id: result.insertedId.toString(),
+      ...novaConta,
+      message: 'Conta criada com sucesso' 
+    });
+  } catch (err) {
+    console.error('Erro ao criar conta:', err);
+    res.status(500).json({ error: 'Erro ao criar conta' });
+  }
+});
+
+// PUT - Editar conta
+app.put('/api/contas/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nome, tipo, limite, saldo_atual, cor, icone, ativa } = req.body;
+    
+    const atualizacao = {};
+    if (nome !== undefined) atualizacao.nome = nome;
+    if (tipo !== undefined) atualizacao.tipo = tipo;
+    if (limite !== undefined) atualizacao.limite = parseFloat(limite);
+    if (saldo_atual !== undefined) atualizacao.saldo_atual = parseFloat(saldo_atual);
+    if (cor !== undefined) atualizacao.cor = cor;
+    if (icone !== undefined) atualizacao.icone = icone;
+    if (ativa !== undefined) atualizacao.ativa = ativa;
+    
+    await db.collection('contas').updateOne(
+      { _id: new ObjectId(id) },
+      { $set: atualizacao }
+    );
+    
+    res.json({ message: 'Conta atualizada com sucesso' });
+  } catch (err) {
+    console.error('Erro ao editar conta:', err);
+    res.status(500).json({ error: 'Erro ao editar conta' });
+  }
+});
+
+// DELETE - Deletar conta
+app.delete('/api/contas/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const count = await db.collection('transacoes').countDocuments({
+      conta_id: id
+    });
+    
+    if (count > 0) {
+      return res.status(400).json({ 
+        error: `Não é possível deletar. Existem ${count} transações nesta conta.` 
+      });
+    }
+    
+    await db.collection('contas').deleteOne({
+      _id: new ObjectId(id)
+    });
+    
+    res.json({ message: 'Conta deletada com sucesso' });
+  } catch (err) {
+    console.error('Erro ao deletar conta:', err);
+    res.status(500).json({ error: 'Erro ao deletar conta' });
+  }
+});
+
+// GET - Calcular saldo de uma conta
+app.get('/api/contas/:id/saldo', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const conta = await db.collection('contas').findOne({
+      _id: new ObjectId(id)
+    });
+    
+    if (!conta) {
+      return res.status(404).json({ error: 'Conta não encontrada' });
+    }
+    
+    const transacoes = await db.collection('transacoes')
+      .find({ conta_id: id, pago: false })
+      .toArray();
+    
+    const totalNaoPago = transacoes.reduce((sum, t) => {
+      return sum + (t.tipo === 'gasto' ? t.valor : -t.valor);
+    }, 0);
+    
+    let resultado = {
+      conta_id: id,
+      nome: conta.nome,
+      tipo: conta.tipo,
+      saldo_atual: conta.saldo_atual,
+      total_nao_pago: totalNaoPago,
+    };
+    
+    if (conta.tipo === 'cartao_credito') {
+      resultado.limite = conta.limite;
+      resultado.disponivel = conta.limite - totalNaoPago;
+      resultado.percentual_usado = ((totalNaoPago / conta.limite) * 100).toFixed(1);
+    } else {
+      resultado.saldo_disponivel = conta.saldo_atual - totalNaoPago;
+    }
+    
+    res.json(resultado);
+  } catch (err) {
+    console.error('Erro ao calcular saldo:', err);
+    res.status(500).json({ error: 'Erro ao calcular saldo' });
+  }
+});
+
+// ========================================
+// ROTAS DE AUTENTICAÇÃO
 // ========================================
 
 // POST - Login
@@ -327,10 +594,12 @@ app.post('/api/cadastro', async (req, res) => {
 app.get('/', (req, res) => {
   res.json({ 
     message: '🚀 API Finance App rodando!',
-    versao: '2.0',
+    versao: '2.3',
     endpoints: {
       transacoes: '/api/transacoes/:usuario_id',
       caixinhas: '/api/caixinhas/:usuario_id',
+      categorias: '/api/categorias/:usuario_id',
+      contas: '/api/contas/:usuario_id',
       login: '/api/login',
       cadastro: '/api/cadastro'
     }
@@ -339,6 +608,11 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`📊 Endpoints disponíveis:`);
+  console.log(`   - Transações: GET/POST/PUT/DELETE`);
+  console.log(`   - Caixinhas: GET/POST/PUT/DELETE`);
+  console.log(`   - ✅ Categorias: GET/POST/PUT/DELETE`);
+  console.log(`   - ✅ Contas: GET/POST/PUT/DELETE`);
 });
 
 module.exports = app;
