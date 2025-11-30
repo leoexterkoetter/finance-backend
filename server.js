@@ -9,6 +9,9 @@ const mongoose = require('mongoose');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Constantes
+const MAX_VALOR = 1000000; // Limite máximo de R$ 1.000.000,00
+
 app.use(cors());
 app.use(express.json());
 
@@ -334,9 +337,18 @@ app.get('/api/transacoes/:usuario_id', async (req, res) => {
 // POST - Criar transação única
 app.post('/api/transacoes', requireAuth, async (req, res) => {
   try {
+    const valor = parseFloat(req.body.valor);
+    
+    // Validar valor máximo
+    if (valor > MAX_VALOR) {
+      return res.status(400).json({ 
+        error: `Valor não pode exceder R$ ${MAX_VALOR.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      });
+    }
+    
     const transacao = await Transacao.create({
       ...req.body,
-      valor: parseFloat(req.body.valor),
+      valor,
       fixo: Boolean(req.body.fixo),
       pago: Boolean(req.body.pago)
     });
@@ -365,8 +377,22 @@ app.post('/api/transacoes/parcelada', requireAuth, async (req, res) => {
     const valorTotal = parseFloat(valor);
     const numeroParcelas = parseInt(parcelas);
     
+    // Validar valor máximo
+    if (valorTotal > MAX_VALOR) {
+      return res.status(400).json({ 
+        error: `Valor total não pode exceder R$ ${MAX_VALOR.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      });
+    }
+    
     // ✅ DIVIDIR O VALOR PELO NÚMERO DE PARCELAS
     const valorPorParcela = valorTotal / numeroParcelas;
+    
+    // Validar se valor por parcela também não excede o máximo
+    if (valorPorParcela > MAX_VALOR) {
+      return res.status(400).json({ 
+        error: `Valor por parcela não pode exceder R$ ${MAX_VALOR.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      });
+    }
     
     const transacoes = [];
 
